@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once 'config.php';
 
 if (!isset($_SESSION['nickname'])) {
     header("Location: index.php");
@@ -7,26 +8,14 @@ if (!isset($_SESSION['nickname'])) {
 }
 
 $sort_by = $_GET['sort'] ?? 'points';
-$leaderboard = file_exists('leaderboard.txt') ? file('leaderboard.txt', FILE_IGNORE_NEW_LINES) : [];
-$players = [];
 
-foreach ($leaderboard as $line) {
-    list($nickname, $points) = explode('|', $line);
-    $players[] = [
-        'nickname' => $nickname,
-        'points' => (int)$points
-    ];
-}
-
+// Get players from database
 if ($sort_by === 'nickname') {
-    usort($players, function($a, $b) {
-        return strcmp($a['nickname'], $b['nickname']);
-    });
+    $stmt = $pdo->query("SELECT * FROM leaderboard ORDER BY nickname ASC");
 } else {
-    usort($players, function($a, $b) {
-        return $b['points'] - $a['points'];
-    });
+    $stmt = $pdo->query("SELECT * FROM leaderboard ORDER BY points DESC");
 }
+$players = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>

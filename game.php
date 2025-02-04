@@ -1,11 +1,19 @@
 <?php
 session_start();
+require_once 'config.php';
 
 // Handle nickname submission
 if (isset($_POST['nickname']) && !isset($_SESSION['nickname'])) {
     $_SESSION['nickname'] = htmlspecialchars($_POST['nickname']);
     $_SESSION['overall_points'] = 0;
     $_SESSION['current_game_points'] = 0;
+    
+    // Check if user exists in leaderboard and get their points
+    $stmt = $pdo->prepare("SELECT points FROM leaderboard WHERE nickname = ?");
+    $stmt->execute([$_SESSION['nickname']]);
+    if ($row = $stmt->fetch()) {
+        $_SESSION['overall_points'] = $row['points'];
+    }
 }
 
 // Check if user is logged in
@@ -19,28 +27,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'exit') {
     $nickname = $_SESSION['nickname'];
     $points = $_SESSION['overall_points'];
     
-    // Save score to leaderboard
-    $leaderboard = file_exists('leaderboard.txt') ? file('leaderboard.txt', FILE_IGNORE_NEW_LINES) : [];
-    $found = false;
-    
-    foreach ($leaderboard as $key => $line) {
-        list($saved_nick, $saved_points) = explode('|', $line);
-        if ($saved_nick === $nickname) {
-            $leaderboard[$key] = "$nickname|$points";
-            $found = true;
-            break;
-        }
-    }
-    
-    if (!$found) {
-        $leaderboard[] = "$nickname|$points";
-    }
-    
-    file_put_contents('leaderboard.txt', implode("\n", $leaderboard));
+    // Save latest score in leaderboard
+    $stmt = $pdo->prepare("INSERT INTO leaderboard (nickname, points) VALUES (?, ?) 
+                          ON DUPLICATE KEY UPDATE points = VALUES(points)");
+    $stmt->execute([$nickname, $points]);
     
     session_destroy();
     header("Location: exit.php?nickname=" . urlencode($nickname) . "&points=" . $points);
     exit();
+}
+
+// Update leaderboard after each quiz
+if ($_SESSION['current_game_points'] !== 0) {
+    $stmt = $pdo->prepare("INSERT INTO leaderboard (nickname, points) VALUES (?, ?) 
+                          ON DUPLICATE KEY UPDATE points = VALUES(points)");
+    $stmt->execute([$_SESSION['nickname'], $_SESSION['overall_points']]);
 }
 ?>
 

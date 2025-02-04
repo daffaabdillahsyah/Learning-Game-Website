@@ -1,36 +1,10 @@
 <?php
 session_start();
+require_once 'config.php';
 
 if (!isset($_SESSION['nickname'])) {
     header("Location: index.php");
     exit();
-}
-
-// Initialize questions if not exists
-if (!file_exists('questions_science.txt')) {
-    $science_questions = [
-        "The Earth is flat.|false",
-        "Water boils at 100 degrees Celsius at sea level.|true",
-        "Dolphins are fish.|false",
-        "The Sun is a star.|true",
-        "Spiders are insects.|false",
-        "Plants need sunlight to grow.|true",
-        "The human body has 206 bones.|true"
-    ];
-    file_put_contents('questions_science.txt', implode("\n", $science_questions));
-}
-
-if (!file_exists('questions_numbers.txt')) {
-    $numbers_questions = [
-        "5*11=55|55",
-        "12+8=20|20",
-        "15-7=8|8",
-        "6*6=36|36",
-        "25/5=5|5",
-        "9+9=18|18",
-        "7*8=56|56"
-    ];
-    file_put_contents('questions_numbers.txt', implode("\n", $numbers_questions));
 }
 
 $topic = $_GET['topic'] ?? '';
@@ -39,27 +13,39 @@ if (!in_array($topic, ['science', 'numbers'])) {
     exit();
 }
 
-// Load and randomize questions
-$questions = file('questions_' . $topic . '.txt', FILE_IGNORE_NEW_LINES);
-shuffle($questions);
-$quiz_questions = array_slice($questions, 0, 3);
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $correct = 0;
     $incorrect = 0;
+    $debug = [];
     
-    for ($i = 0; $i < 3; $i++) {
-        list($question, $answer) = explode('|', $quiz_questions[$i]);
+    // Get questions from session
+    $quiz_questions = $_SESSION['current_quiz_questions'] ?? [];
+    
+    if (empty($quiz_questions)) {
+        header("Location: game.php");
+        exit();
+    }
+    
+    for ($i = 0; $i < 5; $i++) {
         $user_answer = $_POST['answer' . $i] ?? '';
+        $correct_answer = $quiz_questions[$i]['answer'];
+        $question = $quiz_questions[$i]['question'];
+        
+        // Store debug info for both science and numbers
+        $debug[] = [
+            'question' => $question,
+            'user_answer' => $user_answer,
+            'correct_answer' => $correct_answer
+        ];
         
         if ($topic === 'science') {
-            if (strtolower($user_answer) === $answer) {
+            if (strcasecmp(trim($user_answer), trim($correct_answer)) === 0) {
                 $correct++;
             } else {
                 $incorrect++;
             }
         } else { // numbers
-            if ($user_answer === $answer) {
+            if (trim($user_answer) === trim($correct_answer)) {
                 $correct++;
             } else {
                 $incorrect++;
@@ -71,8 +57,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $_SESSION['current_game_points'] += $points;
     $_SESSION['overall_points'] += $points;
     
+    $_SESSION['debug'] = $debug;
+    unset($_SESSION['current_quiz_questions']); // Clear the questions after use
+    
     header("Location: result.php?correct=$correct&incorrect=$incorrect&points=$points");
     exit();
+} else {
+    // Get new random questions from database
+    $stmt = $pdo->prepare("SELECT * FROM questions WHERE topic = ? ORDER BY RAND() LIMIT 5");
+    $stmt->execute([$topic]);
+    $quiz_questions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Store questions in session for later verification
+    $_SESSION['current_quiz_questions'] = $quiz_questions;
 }
 ?>
 
@@ -89,9 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <h1><?php echo ucfirst($topic); ?> Quiz</h1>
         <form method="POST">
             <?php foreach ($quiz_questions as $i => $q): ?>
-                <?php list($question, $answer) = explode('|', $q); ?>
                 <div class="question">
-                    <p><?php echo htmlspecialchars($question); ?></p>
+                    <p><?php echo htmlspecialchars($q['question']); ?></p>
                     <?php if ($topic === 'science'): ?>
                         <select name="answer<?php echo $i; ?>" required>
                             <option value="">Select answer</option>
